@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sudoku — 9×9 with Timer, Start / Pause, Hints (jQuery)</title>
+
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+    integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg1: #f8fafc;
+      --bg2: #eef2ff;
+      --panel: #ffffff;
+      --text: #0b1222;
+      --accent: #2563eb;
+      --good:#10b981;
+      --bad:#ef4444;
+      --warn:#f59e0b;
+      --grid-light:#cbd5e1;
+      --grid-bold:#334155;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0; font-family:'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color:var(--text)}
+    body{
+      background: linear-gradient(135deg,var(--bg1), var(--bg2));
+      display:flex; align-items:center; justify-content:center; padding:28px;
+    }
+
+    .app{
+      width: min(1100px, 98vw);
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(16,24,40,0.08);
+    }
+
+    header{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .title{ font-weight:800; font-size: clamp(18px, 2.4vw, 28px); }
+    .subtitle{ color: #33415588; font-size:12px; margin-top:4px; }
+
+    .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    select, button{
+      padding:8px 12px; border-radius:10px; border:1px solid #e6eefc; background:#f8fbff;
+      cursor:pointer; font-weight:600; color:var(--text);
+    }
+    button:hover, select:hover{ transform:translateY(-1px); }
+
+    .pill{ padding:6px 10px; border-radius:999px; background:#eef2ff; font-weight:700; display:inline-flex; align-items:center; gap:8px; }
+
+    .board-wrap{ display:grid; gap:16px; grid-template-columns: 1fr 240px; margin-top:18px; position:relative; }
+    @media (max-width:920px){ .board-wrap{ grid-template-columns: 1fr; } }
+
+    /* board */
+    .board{
+      width: min(90vw, 640px); aspect-ratio:1/1; margin:auto;
+      display:grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+      background: #f8fafc; border-radius:12px; padding:6px; position:relative;
+      border: 2px solid rgba(51,65,85,0.08);
+    }
+
+    .cell{
+      display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size: clamp(14px, 2.8vw, 22px);
+      border: 1px solid var(--grid-light); color:var(--text);
+      user-select:none; cursor:text; background: transparent; position:relative;
+      transition: background .12s ease, color .12s ease;
+    }
+
+    .cell input{
+      width:100%; height:100%; border:none; outline:none; text-align:center;
+      background:transparent; color:inherit; font:inherit; caret-color:var(--accent);
+      font-weight:700;
+    }
+
+    .cell.given{ background: #eef6ff; color: #0b1222; }
+    .cell.selected{ background: rgba(37,99,235,0.06); }
+    .cell.same-number{ background: rgba(6,182,212,0.06); }
+    .cell.error{ background: rgba(239,68,68,0.12); }
+
+    /* make 3x3 boxes bold using explicit data attributes */
+    .cell[data-c="2"], .cell[data-c="5"]{ border-right: 3px solid var(--grid-bold); }
+    .cell[data-c="0"]{ border-left: 3px solid var(--grid-bold); }
+    .cell[data-r="2"], .cell[data-r="5"]{ border-bottom: 3px solid var(--grid-bold); }
+    .cell[data-r="0"]{ border-top: 3px solid var(--grid-bold); }
+
+    /* side panel */
+    .sidepanel{ display:grid; gap:12px; align-content:flex-start; padding-left:6px; }
+    .numpad{ display:grid; grid-template-columns: repeat(3,1fr); gap:8px; }
+    .numpad button{ padding:12px 8px; border-radius:10px; font-weight:700; background:#f1f5f9; border:1px solid #e6eefc; cursor:pointer; }
+
+    .legend{ display:flex; gap:8px; align-items:center; font-size:13px; color:#475569; }
+    .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .dot.good{ background:var(--good); } .dot.bad{ background:var(--bad);} .dot.warn{ background:var(--warn); }
+
+    .overlay{
+      position:absolute; inset:8px; border-radius:12px; background: rgba(255,255,255,0.92);
+      display:none; align-items:center; justify-content:center; flex-direction:column;
+      text-align:center; gap:8px; z-index:4; border:1px dashed rgba(148,163,184,.24); font-weight:800; color:var(--text)
+    }
+    .overlay.show{ display:flex; }
+
+    .footer{ margin-top:12px; display:flex; justify-content:space-between; color:#475569; font-size:13px; }
+
+    .pulse{ animation: pulse .36s ease; }
+    @keyframes pulse{ 0%{ transform: scale(1);} 50%{ transform: scale(1.04);} 100%{ transform: scale(1);} }
+
+    .confetti{ position:fixed; inset:0; pointer-events:none; display:none; z-index:5; }
+    @media (max-width:520px){
+      .sidepanel{ padding-left:0; }
+      .board{ width: 96vw; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app" id="app">
+    <header>
+      <div>
+        <div class="title">Sudoku</div>
+        <div class="subtitle">9×9 • Start / Pause Timer • Hints • Difficulty • jQuery animations</div>
+      </div>
+
+      <div class="controls">
+        <label style="font-weight:700;color:#334155">Difficulty</label>
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+          <option value="expert">Expert</option>
+        </select>
+
+        <button id="newGame">New Game</button>
+        <button id="hintBtn">Hint</button>
+        <button id="startBtn">Start</button>
+        <button id="pauseBtn">Pause</button>
+
+        <span class="pill">⏱ <span class="timer" id="timer">00:00</span></span>
+        <span class="pill" style="background:#fff8e6">💡 <span id="hintsLeft">3</span> left</span>
+      </div>
+    </header>
+
+    <div class="board-wrap">
+      <div class="board" id="board"></div>
+
+      <div class="sidepanel">
+        <div class="legend"><span class="dot good"></span> Correct <span class="dot bad" style="margin-left:10px"></span> Wrong <span class="dot warn" style="margin-left:10px"></span> Hint</div>
+        <div class="numpad" id="numpad"></div>
+        <div style="color:#475569; font-size:13px">Tip: click a cell then use keyboard (1–9) or tap the number pad. Backspace clears.</div>
+      </div>
+
+      <div class="overlay" id="pauseOverlay">
+        <div style="font-size:22px">Paused</div>
+        <div style="font-size:13px; opacity:.75">Timer stopped — click <b>Start</b> to resume</div>
+      </div>
+    </div>
+
+    <canvas class="confetti" id="confetti"></canvas>
+
+    <div class="footer">
+      <div>Numbers don't lie,Let's see if you can make them fit!</div>
+      <div style="color:#64748b">Have fun - try to beat your best time!</div>
+    </div>
+  </div>
+
+  <script>
+    // ---------------------- Utility helpers ----------------------
+    const shuffle = arr => arr.sort(() => Math.random() - 0.5);
+    const deepCopy = obj => JSON.parse(JSON.stringify(obj));
+    function range(n){ return Array.from({length:n}, (_,i)=>i); }
+
+    function formatTime(seconds){
+      const m = Math.floor(seconds / 60).toString().padStart(2,'0');
+      const s = (seconds % 60).toString().padStart(2,'0');
+      return `${m}:${s}`;
+    }
+
+    // ---------------------- Sudoku Generator ----------------------
+    function generateSolvedBoard(){
+      const board = Array.from({length:9}, ()=>Array(9).fill(0));
+      const nums = range(9).map(i=>i+1);
+
+      function canPlace(r,c,n){
+        for(let i=0;i<9;i++){ if(board[r][i]===n || board[i][c]===n) return false; }
+        const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+        for(let i=0;i<3;i++) for(let j=0;j<3;j++) if(board[br+i][bc+j]===n) return false;
+        return true;
+      }
+
+      function solveCell(idx=0){
+        if(idx>=81) return true;
+        const r = Math.floor(idx/9), c = idx%9;
+        if(board[r][c]!==0) return solveCell(idx+1);
+        for(const n of shuffle(nums.slice())){
+          if(canPlace(r,c,n)){
+            board[r][c]=n;
+            if(solveCell(idx+1)) return true;
+            board[r][c]=0;
+          }
+        }
+        return false;
+      }
+
+      // seed first row with a shuffled 1..9 to randomize solutions
+      const seed = shuffle(nums.slice());
+      for(let c=0;c<9;c++) board[0][c]=seed[c];
+      solveCell(9); // solve remaining cells
+      return board;
+    }
+
+    function getCluesForDifficulty(diff){
+      switch(diff){
+        case 'easy': return 40;
+        case 'medium': return 34;
+        case 'hard': return 28;
+        case 'expert': return 24;
+        default: return 34;
+      }
+    }
+
+    function makePuzzleFromSolution(solution, clues){
+      const puzzle = deepCopy(solution);
+      let cellsToRemove = 81 - Math.max(17, Math.min(80, clues));
+      const positions = shuffle(range(81));
+      for(const pos of positions){
+        if(cellsToRemove<=0) break;
+        const r = Math.floor(pos/9), c = pos%9;
+        puzzle[r][c] = 0;
+        cellsToRemove--;
+      }
+      return puzzle;
+    }
+
+    const state = {
+      solution: null,
+      puzzle: null,
+      selected: null,     // [r,c]
+      running: false,     // timer started
+      seconds: 0,
+      timerId: null,
+      hints: 3,
+      paused: true        // start paused; user clicks Start
+    };
+
+    // ---------------------- Timer functions ----------------------
+    function resetTimer(){
+      state.seconds = 0;
+      updateTimer();
+      if(state.timerId){ clearInterval(state.timerId); state.timerId = null; }
+    }
+    function updateTimer(){ $('#timer').text(formatTime(state.seconds)); }
+
+    function startTimer(){
+      // always clear existing to avoid dup intervals
+      if(state.timerId) clearInterval(state.timerId);
+      state.timerId = setInterval(()=> {
+        // only increment when timer started and not paused
+        if(state.running && !state.paused){
+          state.seconds++; updateTimer();
+        }
+      }, 1000);
+    }
+
+    function setPaused(p){
+      state.paused = p;
+      $('#pauseOverlay').toggleClass('show', p);
+      $('#pauseBtn').text(p ? 'Resume' : 'Pause');
+      // disable only non-given inputs while paused; keep given inputs disabled permanently
+      $('.cell:not(.given) input').prop('disabled', p);
+    }
+
+    // ---------------------- UI Build ----------------------
+    function buildBoard(){
+      const $board = $('#board');
+      $board.empty();
+      for(let r=0;r<9;r++){
+        for(let c=0;c<9;c++){
+          const val = state.puzzle[r][c];
+          const given = val !== 0;
+          const $cell = $('<div>').addClass('cell').attr({'data-r': r.toString(), 'data-c': c.toString()});
+          const $input = $('<input maxlength="1" inputmode="numeric" autocomplete="off">');
+          if(given){ $input.val(val).prop('disabled', true); $cell.addClass('given'); }
+          $cell.append($input);
+          $board.append($cell);
+        }
+      }
+      // appear animation
+      $('.cell').hide().each(function(i){ $(this).delay(i*4).fadeIn(110); });
+    }
+
+    function buildNumpad(){
+      const $pad = $('#numpad').empty();
+      for(let n=1;n<=9;n++){
+        const $b = $('<button>').text(n).on('click', ()=>placeNumber(n));
+        $pad.append($b);
+      }
+      $pad.append($('<button>').text('⌫').on('click', ()=>placeNumber(0)));
+    }
+
+    // ---------------------- Interactions ----------------------
+    function selectCell(r,c){
+      state.selected = [r,c];
+      $('.cell').removeClass('selected same-number');
+      const $selected = cellAt(r,c).addClass('selected');
+      const v = $selected.find('input').val();
+      if(v){
+        $('.cell input').each(function(){ if($(this).val()===v){ $(this).parent().addClass('same-number'); } });
+      }
+    }
+    function cellAt(r,c){ return $(`.cell[data-r="${r}"][data-c="${c}"]`); }
+
+    function placeNumber(n){
+      if(!state.selected || state.paused) return;
+      const [r,c] = state.selected;
+      const $cell = cellAt(r,c);
+      const $inp = $cell.find('input');
+      if($inp.prop('disabled')) return; // given cell
+
+      if(n===0){ $inp.val(''); $cell.removeClass('error').addClass('pulse'); return; }
+      $inp.val(n);
+
+      // validate against solution
+      if(parseInt(n) === state.solution[r][c]){
+        $cell.removeClass('error').addClass('pulse');
+        checkWin();
+      } else {
+        $cell.addClass('error');
+        // jQuery shake animation
+        $cell.stop(true).css({'position':'relative','left':0})
+          .animate({left:-6},60).animate({left:6},60)
+          .animate({left:-4},50).animate({left:4},50)
+          .animate({left:0},40);
+      }
+    }
+
+    function checkWin(){
+      for(let r=0;r<9;r++){
+        for(let c=0;c<9;c++){
+          const $inp = cellAt(r,c).find('input');
+          const val = parseInt($inp.val());
+          if(val !== state.solution[r][c]) return;
+        }
+      }
+      state.running = false;
+      celebrate();
+    }
+
+    function celebrate(){
+      const canvas = document.getElementById('confetti');
+      const ctx = canvas.getContext('2d');
+      canvas.style.display = 'block';
+      const W = canvas.width = window.innerWidth;
+      const H = canvas.height = window.innerHeight;
+      const pieces = Array.from({length:150}, ()=>({
+        x: Math.random()*W, y: -10 - Math.random()*H, s: 4+Math.random()*6, vy: 2+Math.random()*3,
+        vx: -1+Math.random()*2, a: Math.random()*Math.PI
+      }));
+      let t = 0;
+      const anim = ()=>{
+        ctx.clearRect(0,0,W,H); t+=0.02;
+        pieces.forEach(p=>{
+          p.x+=p.vx; p.y+=p.vy; p.a+=0.1;
+          ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a);
+          ctx.fillStyle = `hsl(${Math.floor((p.x+p.y)%360)},80%,60%)`;
+          ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s); ctx.restore();
+        });
+        if(t<4) requestAnimationFrame(anim); else canvas.style.display='none';
+      };
+      anim();
+    }
+
+    function giveHint(){
+      if(state.hints<=0) return;
+      const empties = [];
+      for(let r=0;r<9;r++) for(let c=0;c<9;c++){
+        const $inp = cellAt(r,c).find('input');
+        if($inp.prop('disabled')) continue;
+        const val = parseInt($inp.val());
+        if(!val || val !== state.solution[r][c]) empties.push([r,c]);
+      }
+      if(!empties.length) return;
+      const [r,c] = empties[Math.floor(Math.random()*empties.length)];
+      const $cell = cellAt(r,c);
+      $cell.removeClass('error');
+      $cell.find('input').val(state.solution[r][c]);
+      $cell.addClass('pulse');
+      state.hints--; $('#hintsLeft').text(state.hints);
+      checkWin();
+    }
+
+    // ---------------------- Game Lifecycle ----------------------
+    function newGame(){
+      const diff = $('#difficulty').val();
+      state.solution = generateSolvedBoard();
+      state.puzzle = makePuzzleFromSolution(state.solution, getCluesForDifficulty(diff));
+      state.hints = 3; $('#hintsLeft').text(state.hints);
+
+      buildBoard();
+      buildNumpad();
+      bindCellEvents();
+
+      // start paused — user must press Start to begin
+      state.running = false;
+      setPaused(true);
+      resetTimer();
+    }
+
+    function bindCellEvents(){
+      $('.cell').off('click').on('click', function(){
+        if(state.paused) return;
+        const r = +$(this).data('r'), c = +$(this).data('c');
+        selectCell(r,c);
+      });
+
+      // keyboard input
+      $(document).off('keydown.sudoku').on('keydown.sudoku', function(e){
+        if(state.paused) return;
+        if(!state.selected) return;
+        const k = e.key;
+        if(k>='1' && k<='9'){ placeNumber(parseInt(k)); }
+        else if(k==='Backspace' || k==='Delete'){ placeNumber(0); }
+        else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)){
+          e.preventDefault();
+          let [r,c] = state.selected;
+          if(k==='ArrowUp') r = (r+8)%9; if(k==='ArrowDown') r = (r+1)%9;
+          if(k==='ArrowLeft') c = (c+8)%9; if(k==='ArrowRight') c = (c+1)%9;
+          selectCell(r,c);
+        }
+      });
+    }
+
+    // ---------------------- Controls wiring ----------------------
+    $('#newGame').on('click', newGame);
+
+    $('#hintBtn').on('click', function(){
+      $(this).addClass('pulse');
+      giveHint();
+      setTimeout(()=> $(this).removeClass('pulse'), 360);
+    });
+
+    $('#startBtn').on('click', function(){
+      // Start or resume
+      if(!state.running){
+        state.running = true;
+        setPaused(false);
+        startTimer();
+      } else {
+        // resume if paused
+        setPaused(false);
+      }
+    });
+
+    $('#pauseBtn').on('click', function(){
+      if(!state.running) return; // nothing to pause yet
+      setPaused(!state.paused);
+    });
+
+    // auto-run one puzzle on load, but keep paused so the user must press Start
+    $(function(){ newGame(); });
+
+    // ---------------------- Helper functions (placed after usage) ----------------------
+    function getCluesForDifficulty(diff){
+      switch(diff){
+        case 'easy': return 40;
+        case 'medium': return 34;
+        case 'hard': return 28;
+        case 'expert': return 24;
+        default: return 34;
+      }
+    }
+
+    function makePuzzleFromSolution(solution, clues){
+      const puzzle = deepCopy(solution);
+      let cellsToRemove = 81 - Math.max(17, Math.min(80, clues));
+      const positions = shuffle(range(81));
+      for(const pos of positions){
+        if(cellsToRemove<=0) break;
+        const r = Math.floor(pos/9), c = pos%9;
+        puzzle[r][c] = 0;
+        cellsToRemove--;
+      }
+      return puzzle;
+    }
+
+    // generateSolvedBoard is defined above
+
+    // Resize confetti canvas on window resize
+    window.addEventListener('resize', ()=> {
+      const canvas = document.getElementById('confetti');
+      if(canvas){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    });
+  </script>
+</body>
+</html>
